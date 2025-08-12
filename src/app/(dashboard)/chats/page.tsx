@@ -5,7 +5,7 @@ import { Card } from "@/ui/card/card";
 import { api, ChatWithLastMessageDTO, MessageDTO, SendMessageRequestDTO, CompanyStickerDTO } from '@/api';
 import { useAuth } from '@/contexts/auth-context';
 import { AudioPlayer, FileAttachment, StickerComponent } from '@/ui/media';
-import { MediaPicker, AudioRecorder, FilePreviewModal, StickerPicker } from '@/ui/chat';
+import { MediaPicker, AudioRecorder, FilePreviewModal, StickerPanel } from '@/ui/chat';
 
 export default function ChatsPage() {
   const { currentUser } = useAuth();
@@ -413,7 +413,7 @@ export default function ChatsPage() {
 
       const messageRequest: SendMessageRequestDTO = {
         chat_id: selectedChat.id,
-        content: sticker.name,
+        content: sticker.url,
         message_type: 'sticker'
       };
 
@@ -446,15 +446,23 @@ export default function ChatsPage() {
 
   // Función para renderizar archivos multimedia
   const renderMediaAttachment = (message: MessageDTO) => {
-    if (!message.attachment_url) return null;
+    // Para stickers, usar content si attachment_url no está disponible
+    const mediaUrl = message.message_type === 'sticker' && !message.attachment_url 
+      ? message.content 
+      : message.attachment_url;
+    
+    if (!mediaUrl) return null;
 
     const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-    const fullUrl = `${baseUrl}${message.attachment_url}`;
+    const fullUrl = `${baseUrl}${mediaUrl}`;
 
     // Debug logs
     console.log('🔍 Debug Media URL:');
     console.log('- baseUrl:', baseUrl);
+    console.log('- message_type:', message.message_type);
     console.log('- attachment_url:', message.attachment_url);
+    console.log('- content:', message.content);
+    console.log('- mediaUrl (used):', mediaUrl);
     console.log('- fullUrl:', fullUrl);
 
     switch (message.message_type) {
@@ -505,13 +513,13 @@ export default function ChatsPage() {
       case 'document':
       case 'file':
         // Extraer el nombre del archivo de la URL
-        const fileName = message.attachment_url.split('/').pop() || 'archivo';
+        const fileName = mediaUrl?.split('/').pop() || 'archivo';
         return (
           <div className="mt-2">
             <FileAttachment
               fileName={fileName}
               fileUrl={fullUrl}
-              fileType={message.attachment_url.split('.').pop()}
+              fileType={mediaUrl?.split('.').pop()}
             />
           </div>
         );
@@ -674,8 +682,8 @@ export default function ChatsPage() {
                                 : 'bg-white text-gray-900 border rounded-bl-md'
                             }`}
                           >
-                            {/* Solo mostrar el contenido de texto si no es solo un indicador de media */}
-                            {message.content && !isMediaIndicator(message.content) && (
+                            {/* Solo mostrar el contenido de texto si no es solo un indicador de media y no es un sticker */}
+                            {message.content && !isMediaIndicator(message.content) && message.message_type !== 'sticker' && (
                               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                             )}
                             {renderMediaAttachment(message)}
@@ -724,70 +732,79 @@ export default function ChatsPage() {
             </div>
 
             {/* Message Input */}
-            <div className="p-4 border-t border-gray-200 bg-white">
-              {showAudioRecorder ? (
-                <AudioRecorder
-                  onAudioRecorded={handleAudioRecorded}
-                  onCancel={() => setShowAudioRecorder(false)}
-                  disabled={sending}
-                />
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <div className="flex-1 flex items-center space-x-2 bg-gray-100 rounded-full px-4 py-2">
-                    <MediaPicker
-                      onFileSelect={handleFileSelect}
-                      onStickersClick={() => setShowStickerPicker(true)}
-                      disabled={sending}
-                    />
-                    <input
-                      type="text"
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="Escribe un mensaje..."
-                      className="flex-1 bg-transparent border-none outline-none text-gray-900 placeholder-gray-500"
-                      disabled={sending}
-                    />
-                    <button 
-                      onClick={() => setShowStickerPicker(true)}
-                      className="text-gray-500 hover:text-gray-700 transition-colors"
-                      disabled={sending}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.01M15 10h1.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </button>
-                  </div>
-                  
-                  {/* Send button or Audio recorder button */}
-                  {newMessage.trim() ? (
-                    <button
-                      onClick={sendMessage}
-                      disabled={sending}
-                      className="p-3 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
-                    >
-                      {sending ? (
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current"></div>
-                      ) : (
+            <div className="border-t border-gray-200 bg-white">
+              <div className="p-4">
+                {showAudioRecorder ? (
+                  <AudioRecorder
+                    onAudioRecorded={handleAudioRecorded}
+                    onCancel={() => setShowAudioRecorder(false)}
+                    disabled={sending}
+                  />
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <div className="flex-1 flex items-center space-x-2 bg-gray-100 rounded-full px-4 py-2">
+                      <MediaPicker
+                        onFileSelect={handleFileSelect}
+                        onStickersClick={() => setShowStickerPicker(!showStickerPicker)}
+                        disabled={sending}
+                      />
+                      <input
+                        type="text"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Escribe un mensaje..."
+                        className="flex-1 bg-transparent border-none outline-none text-gray-900 placeholder-gray-500"
+                        disabled={sending}
+                      />
+                      <button 
+                        onClick={() => setShowStickerPicker(!showStickerPicker)}
+                        className={`text-gray-500 hover:text-gray-700 transition-colors ${showStickerPicker ? 'text-green-500' : ''}`}
+                        disabled={sending}
+                      >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.01M15 10h1.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setShowAudioRecorder(true)}
-                      disabled={sending}
-                      className="p-3 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
-                      title="Grabar audio"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              )}
+                      </button>
+                    </div>
+                    
+                    {/* Send button or Audio recorder button */}
+                    {newMessage.trim() ? (
+                      <button
+                        onClick={sendMessage}
+                        disabled={sending}
+                        className="p-3 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
+                      >
+                        {sending ? (
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current"></div>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                          </svg>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowAudioRecorder(true)}
+                        disabled={sending}
+                        className="p-3 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50"
+                        title="Grabar audio"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* Sticker Panel */}
+              <StickerPanel
+                isOpen={showStickerPicker}
+                onStickerSelect={handleStickerSelect}
+                onClose={() => setShowStickerPicker(false)}
+              />
             </div>
           </>
         ) : (
@@ -909,14 +926,6 @@ export default function ChatsPage() {
             setShowFilePreview(false);
             setSelectedFile(null);
           }}
-        />
-      )}
-
-      {/* Sticker Picker Modal */}
-      {showStickerPicker && (
-        <StickerPicker
-          onStickerSelect={handleStickerSelect}
-          onClose={() => setShowStickerPicker(false)}
         />
       )}
     </div>
