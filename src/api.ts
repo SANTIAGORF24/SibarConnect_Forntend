@@ -302,7 +302,7 @@ export const api = {
       formData.append("sticker_name", stickerName);
       formData.append("company_id", companyId.toString());
 
-      return fetch(`${defaultConfig.baseUrl}/chats/save-sticker`, {
+      return fetch(`${defaultConfig.baseUrl}/chats/stickers/save`, {
         method: "POST",
         body: formData,
       }).then((res) => {

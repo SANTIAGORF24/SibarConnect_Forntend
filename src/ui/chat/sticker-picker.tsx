@@ -17,6 +17,17 @@ export function StickerPicker({ onStickerSelect, onClose }: StickerPickerProps) 
 
   useEffect(() => {
     fetchStickers();
+    
+    // Escuchar evento personalizado para refrescar stickers
+    const handleStickerSaved = () => {
+      fetchStickers();
+    };
+    
+    window.addEventListener('stickerSaved', handleStickerSaved);
+    
+    return () => {
+      window.removeEventListener('stickerSaved', handleStickerSaved);
+    };
   }, []);
 
   const fetchStickers = async () => {

@@ -476,6 +476,10 @@ export default function ChatsPage() {
               src={fullUrl}
               alt="Sticker"
               onClick={() => window.open(fullUrl, '_blank')}
+              onStickerSaved={() => {
+                // No hacemos nada específico aquí por ahora
+                console.log('Sticker guardado exitosamente');
+              }}
             />
           </div>
         );
