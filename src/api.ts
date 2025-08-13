@@ -243,7 +243,7 @@ export const api = {
   chats: {
     list(companyId: number) {
       return request<ChatWithLastMessageDTO[]>(
-        `/chats?company_id=${companyId}`
+        `/chats/?company_id=${companyId}`
       );
     },
     getMessages(chatId: number, companyId: number, limit: number = 50) {

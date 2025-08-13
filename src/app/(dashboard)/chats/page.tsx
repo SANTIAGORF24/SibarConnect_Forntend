@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { Card } from "@/ui/card/card";
 import { api, ChatWithLastMessageDTO, MessageDTO, SendMessageRequestDTO, CompanyStickerDTO } from '@/api';
 import { useAuth } from '@/contexts/auth-context';
 import { AudioPlayer, FileAttachment, StickerComponent } from '@/ui/media';
-import { MediaPicker, AudioRecorder, FilePreviewModal, StickerPanel } from '@/ui/chat';
+import { MediaPicker, AudioRecorder, StickerPanel } from '@/ui/chat';
+import { useChatRealtime } from '@/hooks/useChatRealtime';
+import { useCompanyRealtime } from '@/hooks/useCompanyRealtime';
 
 export default function ChatsPage() {
   const { currentUser } = useAuth();
@@ -27,14 +29,17 @@ export default function ChatsPage() {
   } | null>(null);
   
   // Multimedia states
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedFileType, setSelectedFileType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
+  const [selectedFiles, setSelectedFiles] = useState<Array<{file: File, type: 'image' | 'video' | 'audio' | 'document', id: string}>>([]);
   const [showFilePreview, setShowFilePreview] = useState(false);
   const [showAudioRecorder, setShowAudioRecorder] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef<boolean>(true);
+  const autoScrollRef = useRef<boolean>(true);
+  const justOpenedChatRef = useRef<boolean>(false);
+  const suppressNextAutoEffectRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Función para detectar si el contenido es solo un indicador de media
@@ -51,22 +56,44 @@ export default function ChatsPage() {
     );
   };
 
-  // Sort messages chronologically (oldest first)
-  const sortedMessages = messages.sort((a, b) => {
-    const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
-    const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
-    return timeA - timeB; // Ascending order: oldest first
-  });
+  // Sort messages chronologically (oldest first) without mutating state
+  const sortedMessages = useMemo(() => {
+    return [...messages].sort((a, b) => {
+      const timeA = new Date(a.timestamp || a.created_at || 0).getTime();
+      const timeB = new Date(b.timestamp || b.created_at || 0).getTime();
+      return timeA - timeB;
+    });
+  }, [messages]);
 
   // Scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+  const scrollToBottom = (smooth: boolean = true) => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   };
 
+  useLayoutEffect(() => {
+    if (justOpenedChatRef.current) {
+      scrollToBottom(false);
+      justOpenedChatRef.current = false;
+      autoScrollRef.current = false;
+      suppressNextAutoEffectRef.current = true;
+    }
+  }, [sortedMessages]);
+
   useEffect(() => {
-    scrollToBottom();
+    if (suppressNextAutoEffectRef.current) {
+      suppressNextAutoEffectRef.current = false;
+      return;
+    }
+    if (autoScrollRef.current || nearBottomRef.current) {
+      scrollToBottom(true);
+    }
+    autoScrollRef.current = false;
   }, [sortedMessages]);
 
   // Fetch chats on component mount (solo una vez)
@@ -79,9 +106,62 @@ export default function ChatsPage() {
   // Fetch messages when chat is selected (solo una vez)
   useEffect(() => {
     if (!selectedChat?.id || !currentUser?.company_id) return;
-    
+    autoScrollRef.current = true;
+    justOpenedChatRef.current = true;
     fetchMessages(selectedChat.id);
   }, [selectedChat?.id, currentUser?.company_id]);
+
+  // Track if user is near the bottom to avoid scroll jumps
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const threshold = 120;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      nearBottomRef.current = distanceFromBottom <= threshold;
+    };
+    handleScroll();
+    el.addEventListener('scroll', handleScroll);
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  // Realtime updates for selected chat
+  useChatRealtime<{ company_id: number } & MessageDTO>(
+    currentUser?.company_id,
+    selectedChat?.id,
+    {
+      enabled: Boolean(selectedChat?.id && currentUser?.company_id),
+      onEvent: (evt) => {
+        if (evt.event === 'message.created') {
+          const msg = evt.data as unknown as MessageDTO & { company_id?: number };
+          if (msg.chat_id === selectedChat?.id) {
+            setMessages((prev) => {
+              const exists = prev.some((m) => m.id === msg.id);
+              if (exists) return prev;
+              return [...prev, msg];
+            });
+          }
+          // Refrescar lista de chats para actualizar último mensaje
+          fetchChats();
+        }
+      },
+    }
+  );
+
+  // Realtime updates at company level to reflect new chats / last message changes
+  const { connected: companyWsConnected } = useCompanyRealtime<{ chat_id: number; company_id: number; last_message: MessageDTO }>(
+    currentUser?.company_id,
+    {
+      enabled: Boolean(currentUser?.company_id),
+      onEvent: (evt) => {
+        if (evt.event === 'chat.updated') {
+          fetchChats();
+        }
+      },
+    }
+  );
 
   const fetchChats = async () => {
     try {
@@ -140,6 +220,7 @@ export default function ChatsPage() {
 
     try {
       setSending(true);
+      autoScrollRef.current = true;
       
       // Get company ID and user ID from current user
       const companyId = currentUser?.company_id;
@@ -162,9 +243,8 @@ export default function ChatsPage() {
       
       setNewMessage('');
       
-      // Refresh messages to show the sent message
-      await fetchMessages(selectedChat.id);
-      
+      // No recargamos mensajes; el evento realtime actualizará la UI
+
       // Also refresh the chat list to update last message
       await fetchChats();
       
@@ -325,9 +405,20 @@ export default function ChatsPage() {
 
   // Multimedia functions
   const handleFileSelect = (file: File, type: 'image' | 'video' | 'audio' | 'document') => {
-    setSelectedFile(file);
-    setSelectedFileType(type);
-    setShowFilePreview(true);
+    const newFile = {
+      file,
+      type,
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    };
+    setSelectedFiles(prev => [...prev, newFile]);
+  };
+
+  const removeSelectedFile = (id: string) => {
+    setSelectedFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const clearAllFiles = () => {
+    setSelectedFiles([]);
   };
 
   const handleStickerSelect = (sticker: CompanyStickerDTO) => {
@@ -338,14 +429,17 @@ export default function ChatsPage() {
   const handleAudioRecorded = (audioBlob: Blob) => {
     // Convert blob to file
     const audioFile = new File([audioBlob], `audio_${Date.now()}.wav`, { type: 'audio/wav' });
-    setSelectedFile(audioFile);
-    setSelectedFileType('audio');
+    const newFile = {
+      file: audioFile,
+      type: 'audio' as const,
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    };
+    setSelectedFiles(prev => [...prev, newFile]);
     setShowAudioRecorder(false);
-    setShowFilePreview(true);
   };
 
-  const sendFile = async (caption?: string) => {
-    if (!selectedFile || !selectedChat || sending) return;
+  const sendFiles = async (caption?: string) => {
+    if (selectedFiles.length === 0 || !selectedChat || sending) return;
 
     try {
       setSending(true);
@@ -358,40 +452,42 @@ export default function ChatsPage() {
         return;
       }
 
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('chat_id', selectedChat.id.toString());
-      formData.append('message_type', selectedFileType);
+      // Enviar archivos uno por uno
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const fileData = selectedFiles[i];
+        const formData = new FormData();
+        formData.append('file', fileData.file);
+        formData.append('chat_id', selectedChat.id.toString());
+        formData.append('message_type', fileData.type);
 
-      if (caption) {
-        formData.append('caption', caption);
+        // Solo agregar caption al primer archivo
+        if (caption && i === 0) {
+          formData.append('caption', caption);
+        }
+
+        // Send file
+        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+        const response = await fetch(`${baseUrl}/api/chats/send-file?company_id=${companyId}&user_id=${userId}`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
       }
 
-      // Send file
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api";
-      const response = await fetch(`${baseUrl}/chats/send-file?company_id=${companyId}&user_id=${userId}`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
-      }
-
-      console.log('✅ File sent successfully');
+      console.log('✅ Files sent successfully');
 
       // Clear states
-      setSelectedFile(null);
-      setSelectedFileType('image');
-      setShowFilePreview(false);
-
-      // Refresh messages
-      await fetchMessages(selectedChat.id);
+      setSelectedFiles([]);
+      autoScrollRef.current = true;
+      // Realtime actualizará los mensajes; solo refrescamos lista de chats
       await fetchChats();
 
     } catch (error) {
-      console.error('❌ Error sending file:', error);
-      alert('Error al enviar archivo');
+      console.error('❌ Error sending files:', error);
+      alert('Error al enviar archivos');
     } finally {
       setSending(false);
     }
@@ -419,9 +515,8 @@ export default function ChatsPage() {
 
       const result = await api.chats.sendMessage(messageRequest, companyId, userId);
       console.log('✅ Sticker sent successfully');
-
-      // Refresh messages
-      await fetchMessages(selectedChat.id);
+      autoScrollRef.current = true;
+      // Realtime actualizará los mensajes; solo refrescamos lista de chats
       await fetchChats();
 
     } catch (error) {
@@ -805,6 +900,74 @@ export default function ChatsPage() {
                 onStickerSelect={handleStickerSelect}
                 onClose={() => setShowStickerPicker(false)}
               />
+              
+              {/* Files Preview Area */}
+              {selectedFiles.length > 0 && (
+                <div className="border-t border-gray-200 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">
+                      Archivos seleccionados ({selectedFiles.length})
+                    </h3>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={clearAllFiles}
+                        className="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Limpiar todo
+                      </button>
+                      <button
+                        onClick={() => sendFiles()}
+                        disabled={sending}
+                        className="px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 disabled:opacity-50"
+                      >
+                        {sending ? 'Enviando...' : `Enviar ${selectedFiles.length > 1 ? 'archivos' : 'archivo'}`}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {selectedFiles.map((fileData) => (
+                      <div key={fileData.id} className="relative group">
+                        <div className="border border-gray-200 rounded-lg p-2 bg-white">
+                          {/* Preview del archivo */}
+                          {fileData.type === 'image' ? (
+                            <img
+                              src={URL.createObjectURL(fileData.file)}
+                              alt={fileData.file.name}
+                              className="w-full h-20 object-cover rounded"
+                            />
+                          ) : (
+                            <div className="w-full h-20 bg-gray-100 rounded flex items-center justify-center">
+                              <div className="text-center">
+                                <div className="text-2xl mb-1">
+                                  {fileData.type === 'video' ? '🎥' : 
+                                   fileData.type === 'audio' ? '🎵' : '📄'}
+                                </div>
+                                <div className="text-xs text-gray-500 uppercase">
+                                  {fileData.type}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Nombre del archivo */}
+                          <p className="text-xs text-gray-600 mt-1 truncate">
+                            {fileData.file.name}
+                          </p>
+                          
+                          {/* Botón para eliminar */}
+                          <button
+                            onClick={() => removeSelectedFile(fileData.id)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -914,19 +1077,6 @@ export default function ChatsPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* File Preview Modal */}
-      {showFilePreview && selectedFile && (
-        <FilePreviewModal
-          file={selectedFile}
-          fileType={selectedFileType}
-          onSend={sendFile}
-          onCancel={() => {
-            setShowFilePreview(false);
-            setSelectedFile(null);
-          }}
-        />
       )}
     </div>
   );
