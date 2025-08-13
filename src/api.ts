@@ -120,14 +120,19 @@ export type ChatDTO = {
   company_id: number;
   phone_number: string;
   customer_name?: string;
+  status?: string;
+  assigned_user_id?: number | null;
+  priority?: "low" | "medium" | "high";
+  last_message_time?: string;
   last_message_at?: string;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
   messages?: MessageDTO[];
 };
 
 export type ChatWithLastMessageDTO = ChatDTO & {
   last_message?: MessageDTO;
+  unread_count?: number;
 };
 
 export type SendMessageRequestDTO = {
@@ -266,6 +271,25 @@ export const api = {
         body: JSON.stringify(payload),
       });
     },
+    sendMediaLink(
+      payload: {
+        chat_id: number;
+        media_url: string;
+        message_type: string;
+        caption?: string;
+      },
+      companyId: number,
+      userId: number
+    ) {
+      return request<{
+        success: boolean;
+        message_id: number;
+        whatsapp_message_id?: string;
+      }>(`/chats/send-media-link?company_id=${companyId}&user_id=${userId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
     delete(chatId: number, companyId: number) {
       return request<{
         success: boolean;
@@ -290,6 +314,98 @@ export const api = {
         }
         return res.json();
       });
+    },
+    assign(
+      payload: {
+        chat_id: number;
+        assigned_user_id: number;
+        priority: "low" | "medium" | "high";
+      },
+      companyId: number
+    ) {
+      return request<ChatDTO>(`/chats/assign?company_id=${companyId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    updateStatus(
+      payload: { chat_id: number; status: string },
+      companyId: number
+    ) {
+      return request<ChatDTO>(`/chats/status?company_id=${companyId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    createAppointment(
+      payload: { chat_id: number; assigned_user_id: number; start_at: string },
+      companyId: number
+    ) {
+      return request<{
+        id: number;
+        company_id: number;
+        chat_id: number;
+        assigned_user_id: number;
+        start_at: string;
+      }>(`/chats/appointments?company_id=${companyId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    listAppointments(chatId: number, companyId: number) {
+      return request<
+        Array<{
+          id: number;
+          company_id: number;
+          chat_id: number;
+          assigned_user_id: number;
+          start_at: string;
+        }>
+      >(`/chats/appointments?chat_id=${chatId}&company_id=${companyId}`);
+    },
+    updateAppointment(
+      appointmentId: number,
+      companyId: number,
+      payload: { assigned_user_id?: number; start_at?: string }
+    ) {
+      return request<{
+        id: number;
+        company_id: number;
+        chat_id: number;
+        assigned_user_id: number;
+        start_at: string;
+      }>(`/chats/appointments/${appointmentId}?company_id=${companyId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    },
+    deleteAppointment(appointmentId: number, companyId: number) {
+      return request<{ success: boolean }>(
+        `/chats/appointments/${appointmentId}?company_id=${companyId}`,
+        { method: "DELETE" }
+      );
+    },
+    generateSummary(payload: { chat_id: number }, companyId: number) {
+      return request<{
+        id: number;
+        summary: string;
+        interest: "Interesado" | "No interesado" | "Indeciso";
+        created_at: string;
+      }>(`/chats/summaries/generate?company_id=${companyId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    getSummary(chatId: number, companyId: number) {
+      return request<{
+        id: number;
+        summary: string;
+        interest: "Interesado" | "No interesado" | "Indeciso";
+        provider: string;
+        model: string;
+        created_at: string;
+        updated_at?: string;
+      }>(`/chats/summaries/${chatId}?company_id=${companyId}`);
     },
   },
   stickers: {
@@ -318,6 +434,90 @@ export const api = {
         message: string;
       }>(`/chats/stickers/${stickerId}?company_id=${companyId}`, {
         method: "DELETE",
+      });
+    },
+  },
+  templates: {
+    list(companyId: number) {
+      return fetch(
+        `${defaultConfig.baseUrl}/templates/?company_id=${companyId}`
+      ).then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.json();
+      });
+    },
+    create(
+      payload: {
+        name: string;
+        items: Array<{
+          order_index: number;
+          item_type: "text" | "image" | "video" | "audio" | "document";
+          text_content?: string;
+          media_url?: string;
+          mime_type?: string;
+          caption?: string;
+        }>;
+      },
+      companyId: number
+    ) {
+      return fetch(
+        `${defaultConfig.baseUrl}/templates/?company_id=${companyId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      ).then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.json();
+      });
+    },
+    update(
+      templateId: number,
+      payload: {
+        name?: string;
+        items?: Array<{
+          order_index: number;
+          item_type: "text" | "image" | "video" | "audio" | "document";
+          text_content?: string;
+          media_url?: string;
+          mime_type?: string;
+          caption?: string;
+        }>;
+      },
+      companyId: number
+    ) {
+      return fetch(
+        `${defaultConfig.baseUrl}/templates/${templateId}?company_id=${companyId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      ).then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.json();
+      });
+    },
+    delete(templateId: number, companyId: number) {
+      return fetch(
+        `${defaultConfig.baseUrl}/templates/${templateId}?company_id=${companyId}`,
+        { method: "DELETE" }
+      ).then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.json();
+      });
+    },
+    uploadMedia(file: File, companyId: number, caption?: string) {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (caption) formData.append("caption", caption);
+      return fetch(
+        `${defaultConfig.baseUrl}/templates/upload?company_id=${companyId}`,
+        { method: "POST", body: formData }
+      ).then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+        return r.json();
       });
     },
   },
