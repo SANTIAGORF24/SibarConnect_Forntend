@@ -246,10 +246,41 @@ export const api = {
     },
   },
   chats: {
-    list(companyId: number) {
-      return request<ChatWithLastMessageDTO[]>(
-        `/chats/?company_id=${companyId}`
-      );
+    list(
+      companyId: number,
+      params?: {
+        status?: string;
+        priority?: string;
+        has_appointment?: boolean;
+        has_response?: boolean;
+        last_days?: number;
+        q?: string;
+        tag_ids?: number[];
+        pinned_by_user_id?: number;
+        exclude_snoozed_for_user_id?: number;
+      }
+    ) {
+      const p = new URLSearchParams();
+      p.set("company_id", String(companyId));
+      if (params?.status) p.set("status", params.status);
+      if (params?.priority) p.set("priority", params.priority);
+      if (params?.has_appointment !== undefined)
+        p.set("has_appointment", String(params.has_appointment));
+      if (params?.has_response !== undefined)
+        p.set("has_response", String(params.has_response));
+      if (params?.last_days !== undefined)
+        p.set("last_days", String(params.last_days));
+      if (params?.q) p.set("q", params.q);
+      if (params?.tag_ids && params.tag_ids.length > 0)
+        p.set("tag_ids", params.tag_ids.join(","));
+      if (params?.pinned_by_user_id !== undefined)
+        p.set("pinned_by_user_id", String(params.pinned_by_user_id));
+      if (params?.exclude_snoozed_for_user_id !== undefined)
+        p.set(
+          "exclude_snoozed_for_user_id",
+          String(params.exclude_snoozed_for_user_id)
+        );
+      return request<ChatWithLastMessageDTO[]>(`/chats/?${p.toString()}`);
     },
     getMessages(chatId: number, companyId: number, limit: number = 50) {
       return request<MessageDTO[]>(
@@ -267,6 +298,47 @@ export const api = {
         message_id: number;
         whatsapp_message_id?: string;
       }>(`/chats/send-message?company_id=${companyId}&user_id=${userId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    start(
+      payload: {
+        phone_number: string;
+        content: string;
+        message_type?: string;
+        customer_name?: string;
+      },
+      companyId: number,
+      userId: number
+    ) {
+      return request<{
+        success: boolean;
+        chat_id: number;
+        message_id: number;
+        whatsapp_message_id?: string;
+      }>(`/chats/start?company_id=${companyId}&user_id=${userId}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    startTemplate(
+      payload: {
+        phone_number: string;
+        template_name: string;
+        language_code?: string;
+        body_params?: string[];
+        customer_name?: string;
+      },
+      companyId: number,
+      userId: number
+    ) {
+      return request<{
+        success: boolean;
+        chat_id: number;
+        message_id: number;
+        whatsapp_message_id?: string;
+      }>(`/chats/start-template?company_id=${companyId}&user_id=${userId}`, {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -406,6 +478,155 @@ export const api = {
         created_at: string;
         updated_at?: string;
       }>(`/chats/summaries/${chatId}?company_id=${companyId}`);
+    },
+    listCompanyTags(companyId: number) {
+      return request<Array<{ id: number; name: string }>>(
+        `/chats/tags?company_id=${companyId}`
+      );
+    },
+    createCompanyTag(companyId: number, name: string) {
+      return request<{ id: number; name: string }>(
+        `/chats/tags?company_id=${companyId}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        }
+      );
+    },
+    deleteCompanyTag(companyId: number, tagId: number) {
+      return request<{ success: boolean }>(
+        `/chats/tags/${tagId}?company_id=${companyId}`,
+        { method: "DELETE" }
+      );
+    },
+    listChatTags(chatId: number) {
+      return request<number[]>(`/chats/${chatId}/tags`);
+    },
+    setChatTags(chatId: number, tagIds: number[]) {
+      return request<{ success: boolean }>(`/chats/${chatId}/tags`, {
+        method: "PUT",
+        body: JSON.stringify(tagIds),
+      });
+    },
+    addNote(
+      chatId: number,
+      companyId: number,
+      userId: number,
+      content: string
+    ) {
+      const p = new URLSearchParams();
+      p.set("company_id", String(companyId));
+      p.set("user_id", String(userId));
+      p.set("content", content);
+      return request<{
+        id: number;
+        chat_id: number;
+        user_id: number;
+        content: string;
+        created_at: string;
+      }>(`/chats/${chatId}/notes?${p.toString()}`, { method: "POST" });
+    },
+    listNotes(chatId: number, companyId: number) {
+      return request<
+        Array<{
+          id: number;
+          chat_id: number;
+          user_id: number;
+          content: string;
+          created_at: string;
+        }>
+      >(`/chats/${chatId}/notes?company_id=${companyId}`);
+    },
+    pin(chatId: number, userId: number) {
+      return request<{ success: boolean }>(
+        `/chats/${chatId}/pin?user_id=${userId}`,
+        { method: "POST" }
+      );
+    },
+    unpin(chatId: number, userId: number) {
+      return request<{ success: boolean }>(
+        `/chats/${chatId}/pin?user_id=${userId}`,
+        { method: "DELETE" }
+      );
+    },
+    snooze(chatId: number, userId: number, untilIso: string) {
+      return request<{ success: boolean }>(
+        `/chats/${chatId}/snooze?user_id=${userId}&until_at=${encodeURIComponent(
+          untilIso
+        )}`,
+        { method: "POST" }
+      );
+    },
+    unsnooze(chatId: number, userId: number) {
+      return request<{ success: boolean }>(
+        `/chats/${chatId}/snooze?user_id=${userId}`,
+        { method: "DELETE" }
+      );
+    },
+    bulk(
+      companyId: number,
+      args: {
+        chat_ids: number[];
+        status?: string;
+        priority?: string;
+        assigned_user_id?: number;
+        tag_ids?: number[];
+      }
+    ) {
+      const p = new URLSearchParams();
+      p.set("company_id", String(companyId));
+      args.chat_ids.forEach((id) => p.append("chat_ids", String(id)));
+      if (args.status) p.set("status", args.status);
+      if (args.priority) p.set("priority", args.priority);
+      if (args.assigned_user_id !== undefined)
+        p.set("assigned_user_id", String(args.assigned_user_id));
+      if (args.tag_ids && args.tag_ids.length > 0)
+        args.tag_ids.forEach((id) => p.append("tag_ids", String(id)));
+      return request<{ updated: number; success: boolean }>(
+        `/chats/bulk?${p.toString()}`,
+        { method: "POST" }
+      );
+    },
+    insights(
+      chatId: number,
+      companyId: number,
+      limit: number = 100,
+      messages?: Array<{
+        id?: number;
+        content: string;
+        message_type?: string;
+        direction?: string;
+        created_at?: string;
+      }>
+    ) {
+      return request<{
+        message_sentiments?: Array<{
+          id?: number;
+          content?: string;
+          sentiment: string;
+          score: number;
+        }>;
+        chat_sentiment?: { label: string; score: number; trend?: string };
+        intents?: string[];
+        entities?: Array<{ type: string; value: string }>;
+        suggested_actions?: Array<{ action: string; reason?: string }>;
+        suggested_reply?: string;
+        tone_warnings?: string[];
+        interest_probability?: number;
+        churn_risk?: number;
+      }>(`/chats/ai/insights?company_id=${companyId}`, {
+        method: "POST",
+        body: JSON.stringify({ chat_id: chatId, limit, messages }),
+      });
+    },
+    assistDraft(draft: string) {
+      return request<{ improved: string; tone_warnings: string[] }>(
+        `/chats/ai/assist-draft`,
+        {
+          method: "POST",
+          body: JSON.stringify({ draft }),
+        }
+      );
     },
   },
   stickers: {

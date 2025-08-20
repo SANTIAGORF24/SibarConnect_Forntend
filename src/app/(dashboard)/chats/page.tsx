@@ -9,6 +9,7 @@ import { MediaPicker, AudioRecorder, StickerPanel } from '@/ui/chat';
 import { useChatRealtime } from '@/hooks/useChatRealtime';
 import { useCompanyRealtime } from '@/hooks/useCompanyRealtime';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useCallback } from 'react';
 
 // Accordion Component
@@ -55,6 +56,7 @@ function Accordion({ title, icon, isOpen, onToggle, children, className = "" }: 
 
 export default function ChatsPage() {
   const { currentUser } = useAuth();
+  const searchParams = useSearchParams();
   const [chats, setChats] = useState<ChatWithLastMessageDTO[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatWithLastMessageDTO | null>(null);
   const [messages, setMessages] = useState<MessageDTO[]>([]);
@@ -87,6 +89,14 @@ export default function ChatsPage() {
   const [appointmentData, setAppointmentData] = useState<{date: string; time: string; userId: number | ''}>({date: '', time: '', userId: ''});
   const [appointments, setAppointments] = useState<Array<{id:number; assigned_user_id:number; start_at:string}>>([]);
   const [templates, setTemplates] = useState<Array<{ id: number; name: string; items: Array<{ order_index: number; item_type: string; text_content?: string; media_url?: string; caption?: string }> }>>([]);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newChatPhone, setNewChatPhone] = useState<string>("+57");
+  const [newChatMessage, setNewChatMessage] = useState<string>("");
+  const [startingChat, setStartingChat] = useState(false);
+  const [useTemplate, setUseTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState<string>("");
+  const [templateLanguage, setTemplateLanguage] = useState<string>("es");
+  const [templateParams, setTemplateParams] = useState<string>("");
   
   // Panel lateral acordeón states
   const [openAccordions, setOpenAccordions] = useState<{
@@ -109,6 +119,46 @@ export default function ChatsPage() {
   const suppressNextAutoEffectRef = useRef<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSummaryInFlightRef = useRef<boolean>(false);
+
+  const handleStartNewChat = async () => {
+    if (startingChat) return;
+    const companyId = currentUser?.company_id;
+    const userId = currentUser?.id;
+    if (!companyId || !userId) {
+      alert('Usuario o empresa inválidos');
+      return;
+    }
+    const phone = newChatPhone.trim();
+    if (!phone) { alert('Ingresa número'); return; }
+    try {
+      setStartingChat(true);
+      let res: { chat_id: number };
+      if (useTemplate) {
+        if (!templateName.trim()) { alert('Ingresa el nombre de la plantilla'); setStartingChat(false); return; }
+        const params = templateParams.split(',').map(s => s.trim()).filter(Boolean);
+        const r = await api.chats.startTemplate({ phone_number: phone, template_name: templateName.trim(), language_code: templateLanguage, body_params: params }, companyId, userId);
+        res = { chat_id: r.chat_id };
+      } else {
+        const msg = newChatMessage.trim();
+        if (!msg) { alert('Ingresa mensaje'); setStartingChat(false); return; }
+        const r = await api.chats.start({ phone_number: phone, content: msg, message_type: 'text' }, companyId, userId);
+        res = { chat_id: r.chat_id };
+      }
+      setShowNewChatModal(false);
+      setNewChatPhone('+57');
+      setNewChatMessage('');
+      setUseTemplate(false);
+      setTemplateName('');
+      setTemplateParams('');
+      await fetchChats();
+      const created = chats.find(c => c.id === res.chat_id);
+      if (created) setSelectedChat(created);
+    } catch (e) {
+      alert('Error iniciando chat');
+    } finally {
+      setStartingChat(false);
+    }
+  };
 
   const toggleAccordion = (key: keyof typeof openAccordions) => {
     setOpenAccordions(prev => ({
@@ -205,6 +255,16 @@ export default function ChatsPage() {
     
     fetchChats();
   }, [currentUser?.company_id]);
+
+  useEffect(() => {
+    if (!chats || chats.length === 0) return;
+    const idParam = searchParams?.get('chatId');
+    if (!idParam) return;
+    const idNum = Number(idParam);
+    if (Number.isNaN(idNum)) return;
+    const found = chats.find(c => c.id === idNum);
+    if (found) setSelectedChat(found);
+  }, [searchParams, chats]);
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -925,15 +985,30 @@ export default function ChatsPage() {
               </div>
             </div>
             
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Importar chat de WhatsApp"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-            </button>
+            <div className="flex items-center">
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Importar chat de WhatsApp"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowNewChatModal(true)}
+                className="ml-2 px-3 py-2 text-white rounded-lg shadow-sm"
+                style={{ backgroundColor: '#2c4687' }}
+                title="Nuevo chat"
+              >
+                <span className="inline-flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Nuevo
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1411,6 +1486,7 @@ export default function ChatsPage() {
           </div>
         )}
       </div>
+      {selectedChat && (
       <div className="w-96 border-l border-gray-200 hidden xl:flex flex-col bg-gradient-to-b from-gray-50 to-white">
         {/* Header del panel */}
         <div className="p-6 border-b text-white" style={{ 
@@ -1764,6 +1840,7 @@ export default function ChatsPage() {
           </Accordion>
         </div>
       </div>
+      )}
 
       {/* Modal de Importación */}
       {/* Menú contextual */}
@@ -1878,6 +1955,103 @@ export default function ChatsPage() {
               >
                 Cancelar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Nuevo Chat */}
+      {showNewChatModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-[420px] max-w-90vw shadow-2xl border border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{ background: '#2c4687' }}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Nuevo chat</h3>
+                  <p className="text-xs text-gray-600">Envía el primer mensaje</p>
+                </div>
+              </div>
+              <button onClick={() => setShowNewChatModal(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Número (incluye país)</label>
+                <div className="flex">
+                  <select className="px-3 py-2 border border-gray-300 rounded-l-lg bg-gray-50 text-gray-800 focus:outline-none"
+                    value={newChatPhone.startsWith('+57') ? '+57' : '+57'}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      const rest = newChatPhone.replace(/^\+\d+/, '');
+                      setNewChatPhone(code + rest);
+                    }}
+                  >
+                    <option value="+57">+57</option>
+                  </select>
+                  <input
+                    type="tel"
+                    placeholder="3123456789"
+                    className="flex-1 px-3 py-2 border-t border-b border-r border-gray-300 rounded-r-lg focus:outline-none"
+                    value={newChatPhone.replace(/^\+57/, '')}
+                    onChange={(e) => setNewChatPhone('+57' + e.target.value.replace(/\D/g, ''))}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <label className="text-sm text-gray-700">Usar plantilla oficial</label>
+                <input type="checkbox" checked={useTemplate} onChange={(e) => setUseTemplate(e.target.checked)} />
+              </div>
+              {!useTemplate ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje</label>
+                  <textarea
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none"
+                    placeholder="Escribe tu mensaje..."
+                    value={newChatMessage}
+                    onChange={(e) => setNewChatMessage(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre de plantilla</label>
+                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none" placeholder="mi_plantilla" value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Idioma</label>
+                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none" placeholder="es" value={templateLanguage} onChange={(e) => setTemplateLanguage(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Parámetros cuerpo (separados por coma)</label>
+                    <input className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none" placeholder="Juan, 15:00, 20/08" value={templateParams} onChange={(e) => setTemplateParams(e.target.value)} />
+                  </div>
+                </div>
+              )}
+              <div className="flex space-x-3 pt-2">
+                <button
+                  onClick={() => setShowNewChatModal(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleStartNewChat}
+                  disabled={startingChat}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-lg shadow-sm disabled:opacity-60"
+                  style={{ backgroundColor: '#2c4687' }}
+                >
+                  {startingChat ? 'Enviando...' : 'Enviar'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
