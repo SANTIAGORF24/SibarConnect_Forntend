@@ -1,62 +1,95 @@
 "use client";
-import { InputHTMLAttributes, forwardRef } from "react";
 
-export type TextInputProps = InputHTMLAttributes<HTMLInputElement> & {
+import { cn } from "@/lib/utils";
+import { forwardRef, InputHTMLAttributes } from "react";
+
+export interface TextInputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
+  helperText?: string;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
-  helperText?: string;
-};
+  variant?: "default" | "filled" | "outlined";
+  size?: "sm" | "md" | "lg";
+}
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
-  function TextInput({ label, error, leftIcon, rightIcon, helperText, className, id, ...props }, ref) {
-    const inputId = id || props.name || undefined;
-    
+  ({
+    className,
+    type,
+    label,
+    error,
+    helperText,
+    leftIcon,
+    rightIcon,
+    variant = "default",
+    size = "md",
+    ...props
+  }, ref) => {
+    const variants = {
+      default: "border-gray-300 focus:border-blue-500 focus:ring-blue-500",
+      filled: "border-gray-300 bg-gray-50 focus:border-blue-500 focus:ring-blue-500 focus:bg-white",
+      outlined: "border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20",
+    };
+
+    const sizes = {
+      sm: "px-3 py-2 text-sm",
+      md: "px-4 py-2.5 text-sm",
+      lg: "px-4 py-3 text-base",
+    };
+
     return (
       <div className="w-full">
-        {label ? (
-          <label htmlFor={inputId} className="block text-sm font-semibold text-foreground/80 mb-2">
+        {label && (
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             {label}
           </label>
-        ) : null}
-        <div
-          className={`relative flex items-center rounded-xl border transition-all duration-200 bg-white shadow-sm ${
-            error 
-              ? "border-red-300 focus-within:border-red-500 focus-within:ring-2 focus-within:ring-red-500/20" 
-              : "border-gray-200 focus-within:border-[var(--color-primary)] focus-within:ring-2 focus-within:ring-[var(--color-primary)]/20 hover:border-gray-300"
-          } ${className || ""}`}
-        >
-          {leftIcon ? (
-            <span className="pl-4 text-foreground/60 flex items-center">{leftIcon}</span>
-          ) : null}
+        )}
+
+        <div className="relative">
+          {leftIcon && (
+            <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+              {leftIcon}
+            </div>
+          )}
+
           <input
+            type={type}
+            className={cn(
+              "block w-full rounded-lg border transition-all duration-200",
+              "placeholder:text-gray-400",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              "focus:outline-none focus:ring-2 focus:ring-offset-0",
+              variants[variant],
+              sizes[size],
+              leftIcon && "pl-10",
+              rightIcon && "pr-10",
+              error && "border-red-500 focus:border-red-500 focus:ring-red-500",
+              className
+            )}
             ref={ref}
-            id={inputId}
-            className={`w-full bg-transparent outline-none text-sm text-foreground placeholder:text-foreground/50 ${
-              leftIcon ? "pl-3" : "pl-4"
-            } ${
-              rightIcon ? "pr-3" : "pr-4"
-            } py-3.5`}
             {...props}
           />
-          {rightIcon ? (
-            <span className="pr-4 text-foreground/60 flex items-center">{rightIcon}</span>
-          ) : null}
+
+          {rightIcon && (
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+              {rightIcon}
+            </div>
+          )}
         </div>
-        {error ? (
-          <p className="mt-2 text-xs text-red-600 flex items-center space-x-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>{error}</span>
-          </p>
-        ) : helperText ? (
-          <p className="mt-2 text-xs text-foreground/60">{helperText}</p>
-        ) : null}
+
+        {error && (
+          <p className="mt-1 text-sm text-red-600">{error}</p>
+        )}
+
+        {helperText && !error && (
+          <p className="mt-1 text-sm text-gray-500">{helperText}</p>
+        )}
       </div>
     );
   }
 );
+
+TextInput.displayName = "TextInput";
 
 

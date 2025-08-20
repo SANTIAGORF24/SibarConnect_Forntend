@@ -1,76 +1,116 @@
 "use client";
-import { SelectHTMLAttributes, forwardRef } from "react";
 
-export type SelectOption = {
-  value: string | number;
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { ChevronDownIcon, CheckIcon } from "@radix-ui/react-icons";
+import { cn } from "@/lib/utils";
+import { forwardRef } from "react";
+
+export interface SelectOption {
+  value: string;
   label: string;
   disabled?: boolean;
-};
+}
 
-export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> & {
+export interface SelectProps {
+  options: SelectOption[];
+  value?: string;
+  onValueChange?: (value: string) => void;
+  placeholder?: string;
   label?: string;
   error?: string;
   helperText?: string;
-  options: SelectOption[];
-  placeholder?: string;
-};
+  disabled?: boolean;
+  className?: string;
+  size?: "sm" | "md" | "lg";
+}
 
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  function Select({ label, error, helperText, options, placeholder, className, id, ...props }, ref) {
-    const inputId = id || props.name || undefined;
-    
+export const Select = forwardRef<HTMLButtonElement, SelectProps>(
+  ({
+    options,
+    value,
+    onValueChange,
+    placeholder = "Seleccionar...",
+    label,
+    error,
+    helperText,
+    disabled = false,
+    className,
+    size = "md"
+  }, ref) => {
+    const sizes = {
+      sm: "h-9 px-3 text-sm",
+      md: "h-10 px-4 text-sm",
+      lg: "h-11 px-4 text-base",
+    };
+
     return (
       <div className="w-full">
-        {label ? (
-          <label htmlFor={inputId} className="block text-sm font-semibold text-foreground/80 mb-2">
+        {label && (
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             {label}
           </label>
-        ) : null}
-        <div
-          className={`relative rounded-xl border transition-all duration-200 bg-white shadow-sm ${
-            error 
-              ? "border-red-300 focus-within:border-red-500 focus-within:ring-2 focus-within:ring-red-500/20" 
-              : "border-gray-200 focus-within:border-[var(--color-primary)] focus-within:ring-2 focus-within:ring-[var(--color-primary)]/20 hover:border-gray-300"
-          } ${className || ""}`}
-        >
-          <select
+        )}
+
+        <SelectPrimitive.Root value={value} onValueChange={onValueChange} disabled={disabled}>
+          <SelectPrimitive.Trigger
             ref={ref}
-            id={inputId}
-            className="w-full bg-transparent outline-none text-sm text-foreground px-4 py-3.5 appearance-none cursor-pointer"
-            {...props}
-          >
-            {placeholder && (
-              <option value="" disabled>
-                {placeholder}
-              </option>
+            className={cn(
+              "flex h-10 w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm",
+              "placeholder:text-gray-400",
+              "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-0",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              "hover:border-gray-400",
+              error && "border-red-500 focus:border-red-500 focus:ring-red-500",
+              sizes[size],
+              className
             )}
-            {options.map((option) => (
-              <option 
-                key={option.value} 
-                value={option.value} 
-                disabled={option.disabled}
-              >
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-            <svg className="w-4 h-4 text-foreground/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
-        {error ? (
-          <p className="mt-2 text-xs text-red-600 flex items-center space-x-1">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>{error}</span>
-          </p>
-        ) : helperText ? (
-          <p className="mt-2 text-xs text-foreground/60">{helperText}</p>
-        ) : null}
+          >
+            <SelectPrimitive.Value placeholder={placeholder} />
+            <SelectPrimitive.Icon>
+              <ChevronDownIcon className="h-4 w-4 opacity-50" />
+            </SelectPrimitive.Icon>
+          </SelectPrimitive.Trigger>
+
+          <SelectPrimitive.Portal>
+            <SelectPrimitive.Content
+              className="relative z-50 min-w-[8rem] overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-900 shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2"
+            >
+              <SelectPrimitive.Viewport className="p-1">
+                {options.map((option) => (
+                  <SelectPrimitive.Item
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.disabled}
+                    className={cn(
+                      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none",
+                      "focus:bg-gray-100 focus:text-gray-900",
+                      "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+                      option.disabled && "cursor-not-allowed opacity-50"
+                    )}
+                  >
+                    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+                      <SelectPrimitive.ItemIndicator>
+                        <CheckIcon className="h-4 w-4" />
+                      </SelectPrimitive.ItemIndicator>
+                    </span>
+                    <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                  </SelectPrimitive.Item>
+                ))}
+              </SelectPrimitive.Viewport>
+            </SelectPrimitive.Content>
+          </SelectPrimitive.Portal>
+        </SelectPrimitive.Root>
+
+        {error && (
+          <p className="mt-1 text-sm text-red-600">{error}</p>
+        )}
+
+        {helperText && !error && (
+          <p className="mt-1 text-sm text-gray-500">{helperText}</p>
+        )}
       </div>
     );
   }
 );
+
+Select.displayName = "Select";
